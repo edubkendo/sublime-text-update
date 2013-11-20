@@ -1,0 +1,81 @@
+#!/bin/bash
+##
+## Replace Sublime Text 3 icons in Ubuntu with the much improved https://github.com/dmatarazzo/Sublime-Text-3-Icon version.
+##
+## Script by Michael Robinson <mike@pagesofinterest.net>
+## http://pagesofinterest.net
+##
+
+if [ "$(whoami)" != "root" ]; then
+    echo "Script must be run as root, e.g."
+    echo sudo $0
+    exit 1
+fi
+
+# Check if imagemagick is installed. If not, install.
+problem=$(dpkg -s imagemagick|grep installed)
+    echo Checking for imagemagick: $problem
+    if [ "" == "$problem" ]; then
+        echo "Imagemagick not installed. Installing imagemagick"
+        sudo apt-get --force-yes --yes install imagemagick
+fi
+
+# The directory this script is running in
+THIS_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+echo "Creating Sublime Text 3 icon set for Ubuntu"
+# Convert icons and move into folders
+TEMP_ICONS="$THIS_DIR/TEMP/Icon"
+mkdir -p -m755 $TEMP_ICONS
+
+# Convert icons
+for SIZE in 256 128 48 32 16
+do
+    mkdir "$TEMP_ICONS/${SIZE}x${SIZE}"
+    convert -resize "${SIZE}X${SIZE}" "${THIS_DIR}/st2_icon_512.png" "${TEMP_ICONS}/${SIZE}x${SIZE}/sublime_text.png"
+done
+
+echo "Updating Sublime Text 3 icons"
+
+# Update theme icons
+ICON_THEME_NAME=$(gconftool-2 -g /desktop/gnome/interface/icon_theme)
+ICON_THEME_PATH="/usr/share/icons/"
+
+# Replace theme icons in all default locations
+for dir in /usr/share/icons/*/ ~/.local/share/icons/*/
+do
+    ICON_DIRECTORY=${dir%*/}
+    # Replace all icon sizes
+    for SIZE in 256 128 48 32 16
+    do
+        ICON_SIZE_DIRECTORY="${ICON_DIRECTORY}/${SIZE}x${SIZE}/apps/"
+        if [ -d "$ICON_SIZE_DIRECTORY" ]; then
+            cp -f "${TEMP_ICONS}/${SIZE}x${SIZE}/sublime_text.png" "${ICON_SIZE_DIRECTORY}/sublime-text-3.png"
+        fi
+    done
+done
+
+# Replace default Sublime Text 3 icons
+SUBLIME_ICONS="/opt/sublime_text/Icon/"
+SUBLIME_CACHE_ICONS="/var/cache/sublime-text-2/Sublime Text 2/Icon/"
+
+# Remove existing icons
+rm -rf $SUBLIME_ICONS $SUBLIME_CACHE_ICONS
+
+# Move new icons into place
+cp -rp $TEMP_ICONS $SUBLIME_ICONS
+cp -rp $TEMP_ICONS "$SUBLIME_CACHE_ICONS"
+
+# Remove temporary icon directory
+rm -rf $TEMP_ICONS
+
+echo "Rebuilding icon cache"
+
+# Rebuild icon cache for all icons
+sudo find /usr/share/icons -mindepth 1 -maxdepth 1 -type d | while read -r THEME; do
+  if [ -f "$THEME/index.theme" ]; then
+    sudo gtk-update-icon-cache -f -q "$THEME"
+  fi
+done
+
+echo "Icon cache rebuilt successfully"

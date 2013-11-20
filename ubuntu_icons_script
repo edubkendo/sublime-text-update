@@ -1,0 +1,113 @@
+#!/usr/bin/env ruby
+
+require "pathname"
+require "fileutils"
+
+module UbuntuIconsScript
+
+  ICON_DIR = Pathname.new("/usr/share/icons/")
+  @this_dir = Pathname.new(__FILE__).expand_path.dirname
+  @temp_icons = Pathname.new(@this_dir + "TEMP/Icon")
+  @img_sizes = [512, 256, 128, 48, 32, 16]
+
+  module_function
+
+  def check_for_root
+    unless `whoami` =~ /root/
+      puts "Script must be run as root, e.g."
+      puts "sudo #{__FILE__}"
+      exit 1
+    end
+  end
+
+  def check_for_imagemagick
+    problem = (`dpkg -s imagemagick`).split("\n").grep(/installed/)
+    puts "Checking for imagemagick: #{problem}"
+
+    unless problem
+      puts "Imagemagick not installed. Installing..."
+      `sudo apt-get --force-yes --yes install imagemagick`
+    end
+  end
+
+  def create_icons_dirs
+    puts "Creating Sublime Text 3 icon set for Ubuntu"
+
+    @temp_icons.mkpath
+    FileUtils.chmod 0755, @temp_icons
+  end
+
+  def convert_icons
+    @img_sizes.each do |size|
+      size_dir = Pathname.new(@temp_icons.join("#{size}x#{size}"))
+      size_dir.mkpath
+      %x{convert -resize "#{size}X#{size}" "#{@this_dir}/st3_icon_512.png" "#{size_dir}/sublime-text.png"}
+    end
+  end
+
+  def replace_icons
+    puts "Updating Sublime Text 3 icons"
+    ICON_DIR.children.each do |dir|
+      @img_sizes.each do |size|
+        icon_path = Pathname.new(dir.join("#{size}x#{size}/apps/sublime-text.png"))
+
+        tmp_icon_path = Pathname.new(@temp_icons.join("#{size}x#{size}/sublime-text.png"))
+
+        if icon_path.exist?
+          FileUtils.cp(tmp_icon_path, icon_path)
+        elsif dir.to_s =~ /hicolor/ && size == 512
+          fivetwelve_path = Pathname.new(dir.join("#{size}x#{size}/apps/"))
+          FileUtils.cp(tmp_icon_path, fivetwelve_path)
+        end
+      end
+    end
+  end
+
+  def replace_defaults
+    subl_icons = Pathname.new("/opt/sublime_text/Icon/")
+    FileUtils.rm_rf(subl_icons)
+    FileUtils.cp_r(@temp_icons, subl_icons)
+  end
+
+  def rebuild_cache
+    puts "Rebuilding icon cache"
+    ICON_DIR.children.each do |child|
+      if Pathname.new(child.join("index.theme")).exist?
+        `sudo gtk-update-icon-cache -f -q "#{child}"`
+      end
+    end
+  end
+
+  def remove_tmp_icon_dir
+    puts "Removing temp dir"
+    FileUtils.rm_rf(Pathname.new(@this_dir.join("TEMP/")))
+  end
+
+  def make_home_bin
+    home_bin_path = Pathname.new(ENV["HOME"]).join("bin")
+    home_bin_path.mkpath
+    home_bin_path
+  end
+
+  def copy_desktop_and_subl
+    puts "Creating desktop shortcut"
+    desktop_path = Pathname.new(@this_dir.join("sublime_text.desktop"))
+    copy_desktop_to = Pathname.new("/usr/share/applications/sublime_text.desktop")
+
+    puts "Creating command line 'subl' script"
+    FileUtils.cp(desktop_path, copy_desktop_to)
+    subl_bin_path = Pathname.new(@this_dir.join("subl"))
+    FileUtils.cp(subl_bin_path, (UbuntuIconsScript.make_home_bin))
+  end
+
+end
+
+UbuntuIconsScript.check_for_root
+UbuntuIconsScript.check_for_imagemagick
+UbuntuIconsScript.create_icons_dirs
+UbuntuIconsScript.convert_icons
+UbuntuIconsScript.replace_icons
+UbuntuIconsScript.replace_defaults
+UbuntuIconsScript.rebuild_cache
+UbuntuIconsScript.remove_tmp_icon_dir
+UbuntuIconsScript.copy_desktop_and_subl
